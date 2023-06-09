@@ -1,36 +1,141 @@
-
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.Random;
+import java.util.concurrent.Semaphore;
 
-class Mestre {
+public class Mestre {
 
-    private final List<Processo> processos;
+    static String id;
+    static int portaMestre = 8100;
+    static List<String> AdrSlaves = List.of(
+            "localhost",
+            "localhost");
+    static List<Integer> ports = List.of(
+            8001,
+            8002);
+    static long time = 0;
+    static long timeEnvio = 0;
+    static long ptime = 0;
+    static long delayTime = 0;
+    static long adelay = 0;// diferente para cada slave
+    static List<Slave> slaves = new ArrayList<>();
+    static long desvio = 2000; // tolerancia da mediana
 
-    public Mestre(List<Processo> processos) {
-        this.processos = processos;
-    }
+    static Semaphore sem = new Semaphore(1);
 
-    public long receberHoraAtual(int id, long horaEnvio) {
-        // Simulando atraso na comunicação da rede
-        try {
-            Thread.sleep(processos.get(id - 1).getDelay());
-        } catch (InterruptedException e) {
+    public static void main(String[] args) throws InterruptedException {
+        time = time - (System.currentTimeMillis()+time);
+
+        for (int i = 0; i < AdrSlaves.size(); i++) {
+            slaves.add(new Slave(i, AdrSlaves.get(i), ports.get(i)));
         }
 
-        // Simulando o cálculo da hora de recebimento no mestre
-        Random random = new Random();
-        long atraso = random.nextInt(100) + 1; // Atraso aleatório entre 1 e 100ms
-        long horaRecebimento = horaEnvio + atraso;
-        System.out.println("Mestre: Processo " + id + " enviou a hora atual = " + horaEnvio + ", hora de recebimento = " + horaRecebimento);
-        return horaRecebimento;
+        try {
+            while (true) {
+                timeEnvio = (System.currentTimeMillis()+time);
+
+                for (int i = 0; i < AdrSlaves.size(); i++) {
+                    slaves.get(i).tempoProcesso = (System.currentTimeMillis()+time);
+                }
+
+
+                for (int i = 0; i < AdrSlaves.size(); i++) {
+                    DatagramSocket socket = new DatagramSocket(portaMestre);
+                    InetAddress endereco = InetAddress.getByName(AdrSlaves.get(i));
+
+                    String mensagem = "ID:"+i;
+                    byte[] sendData = mensagem.getBytes();
+                    DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, endereco, ports.get(i));
+
+                    slaves.get(i).tempoProcesso = (System.currentTimeMillis()+time) - slaves.get(i).tempoProcesso;
+                    delayTime = (System.currentTimeMillis()+time);
+                    socket.send(sendPacket);
+
+                    System.out.println("Mestre enviou: " + mensagem + " \t\ttempo agora: " + (System.currentTimeMillis()+time));
+
+                    // Aguarda a resposta
+                    byte[] receiveData = new byte[1024];
+                    DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+
+                    socket.receive(receivePacket);
+                    slaves.get(i).tempoAcesso = (System.currentTimeMillis()+time);
+                    delayTime = (System.currentTimeMillis()+time) - delayTime;
+
+                    String response = new String(receivePacket.getData(), 0, receivePacket.getLength());
+                    System.out.println("Mestre recebeu do escravo " + i + ": " + response + " \t\ttempo agora: " + (System.currentTimeMillis()+time));
+                    response = response.trim();
+                    String[] resp = response.split(":"); // tempo:ptempo
+                    delayTime -= Long.parseLong(resp[1]);
+                    slaves.get(i).delay = delayTime;
+                    slaves.get(i).tempoRecebido = Long.parseLong(resp[0]);
+                    slaves.get(i).atualizaTempoOriginal(Long.parseLong(resp[1])); //ptime
+                    
+                    socket.close();
+                    System.out.println();
+                }
+
+                long somaTempos = 0;
+                List<Long> organiza = new ArrayList<>();
+
+                organiza.add(timeEnvio);
+
+                for (int i = 0; i < AdrSlaves.size(); i++) {
+                    // somaTempos += slaves.get(i).tempoOriginal;
+                    organiza.add(slaves.get(i).tempoOriginal);
+                }
+                Collections.sort(organiza);
+
+                long numMedia = 0;
+
+                for (int i = 0; i < AdrSlaves.size()+1; i++) {
+                    if (organiza.get(i) < (organiza.get(organiza.size() / 2) - desvio)
+                            || organiza.get(i) > (organiza.get(organiza.size() / 2) + desvio)) {
+                        continue;
+                    }
+                    numMedia++;
+                    System.out.println("tempo de " + i +": "+organiza.get(i));//sout
+                    somaTempos += organiza.get(i);
+                }
+
+                // calculo da média
+                long media = (somaTempos/numMedia);
+                System.out.println("media: " + media + " numMedia: " + numMedia + " somaTempos: " + somaTempos + " time: " + (System.currentTimeMillis()+time) + " timeEnvio: " + timeEnvio + "somatempos: " + somaTempos );//sout
+                long novoTime = media + ((System.currentTimeMillis()+time) - timeEnvio);
+                System.out.println("novotime: "+ novoTime);
+
+                time = novoTime - (System.currentTimeMillis());
+
+                System.out.println("Novo tempo: " + media + " Tempo atualizado: " + novoTime);
+
+                for (int i = 0; i < AdrSlaves.size(); i++) {
+                    DatagramSocket socket = new DatagramSocket(portaMestre);
+                    InetAddress endereco = InetAddress.getByName(AdrSlaves.get(i));
+
+                    long pntime = (System.currentTimeMillis()+time) - novoTime; // tempo de processo do master
+                    String mensagem = novoTime + ":" + pntime + ":" + slaves.get(i).delay; // time:ptimeMaster:delayMasterToSlave(i)
+                    byte[] sendData = mensagem.getBytes();
+                    DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, endereco, ports.get(i));
+
+                    socket.send(sendPacket);
+
+                    System.out.println("Mestre enviou para " + i + ": " + mensagem + " \t\ttempo agora: " + (System.currentTimeMillis()+time));
+                    socket.close();
+                }
+
+                System.out.println("\n-----------------------------------------------------------------------------------\n");
+
+                Thread.sleep(10000);
+
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
     }
 
-    public long receberHoraAjustada(int processoId, long horaRecebimento) {
-        // Simulando o cálculo da hora ajustada no mestre
-        Random random = new Random();
-        long fatorCorrecao = random.nextInt(100) + 1; // Fator de correção aleatório entre 1 e 100ms
-        long horaAjustada = horaRecebimento + fatorCorrecao;
-        System.out.println("Mestre: Processo " + processoId + " enviou a hora de recebimento = " + horaRecebimento + ", hora ajustada = " + horaAjustada);
-        return horaAjustada;
-    }
 }
