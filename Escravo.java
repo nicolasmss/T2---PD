@@ -7,7 +7,7 @@ import java.util.concurrent.Semaphore;
 public class Escravo {
     static String id;
     static String host = "localhost";
-    static int port = 8001;
+    static int port;
     static int portMaster = 8100;
     static long time = 0;
     static long ptime = 0;
