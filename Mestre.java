@@ -13,10 +13,12 @@ public class Mestre {
     static int portaMestre = 8100;
     static List<String> AdrSlaves = List.of(
             "localhost",
+            "localhost",
             "localhost");
     static List<Integer> ports = List.of(
             8001,
-            8002);
+            8002,
+            8003);
     static long time = 0;
     static long timeEnvio = 0;
     static long ptime = 0;
