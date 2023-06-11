@@ -106,9 +106,14 @@ public class Mestre {
                 // calculo da média
                 long media = (somaTempos / numMedia);
                 System.out.println("media: " + media + " numMedia: " + numMedia + " somaTempos: " + somaTempos
-                        + " time: " + (System.currentTimeMillis() + time) + " timeEnvio: " + timeEnvio + "somatempos: "
+                        + " time atual: " + (System.currentTimeMillis() + time) + " timeEnvio: " + timeEnvio
+                        + " somatempos: "
                         + somaTempos);// sout
                 long novoTime = media + ((System.currentTimeMillis() + time) - timeEnvio);
+
+                System.out.println("\ncalculo novo tempo = media: " + media
+                        + " + (tempo atual (pode estar diferente pois trabalha com tempo real): "
+                        + (System.currentTimeMillis() + time) + " - tempo de envio: " + timeEnvio + ")");
                 System.out.println("novotime: " + novoTime);
 
                 time = novoTime - (System.currentTimeMillis());
